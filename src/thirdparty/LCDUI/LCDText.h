@@ -20,6 +20,7 @@
 #ifndef _LCDTEXT_H_INCLUDED_ 
 #define _LCDTEXT_H_INCLUDED_ 
 
+
 #include "LCDBase.h"
 #include <string>
 
