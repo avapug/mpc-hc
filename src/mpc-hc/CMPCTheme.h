@@ -123,6 +123,7 @@ public:
 
     static const COLORREF ActivePlayListItemColor;
     static const COLORREF ActivePlayListItemHLColor;
+    static const COLORREF StaticLinkColor;
 
     static const BYTE GripperBitsH[10];
     static const BYTE GripperBitsV[8];
@@ -133,24 +134,9 @@ public:
     static wchar_t* const uiStaticTextFont;
     static wchar_t* const uiSymbolFont;
 
-    static const BYTE ScrollArrowBitsV[12];
-    static const BYTE ScrollArrowBitsH[14];
-    static const int scrollArrowShort;
-    static const int scrollArrowLong;
 
-    static const BYTE ComboArrowBits[10];
-    static const int ComboArrowWidth;
-    static const int ComboArrowHeight;
-
-    static const COLORREF ComboboxArrowColor[3];
-    static const COLORREF ComboboxArrowColorHover[3];
-    static const COLORREF ComboboxArrowColorDisabled[3];
-    static const COLORREF ComboboxArrowColorClick[3];
-
-    static const BYTE SpinnerArrowBitsV[6];
-    static const BYTE SpinnerArrowBitsH[10];
-    static const int SpinnerArrowWidth;
-    static const int SpinnerArrowHeight;
+    static const COLORREF ComboboxArrowColor;
+    static const COLORREF ComboboxArrowColorDisabled;
 
     static const BYTE CheckBits[14];
     static const int CheckWidth;
