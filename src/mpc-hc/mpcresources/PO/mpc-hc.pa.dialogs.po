@@ -429,8 +429,8 @@ msgid "After Playback"
 msgstr "ਚਲਾਓ ਬਾਅਦ"
 
 msgctxt "IDD_PPAGEPLAYBACK_IDC_STATIC"
-msgid "Default zoom"
-msgstr "ਡਿਫਾਲਟ ਜ਼ੂਮ"
+msgid "Zoom and Alignment"
+msgstr ""
 
 msgctxt "IDD_PPAGEPLAYBACK_IDC_CHECK5"
 msgid "Auto-zoom:"
@@ -490,6 +490,10 @@ msgstr "%"
 
 msgctxt "IDD_PPAGEPLAYBACK_IDC_STATIC"
 msgid "Speed step:"
+msgstr ""
+
+msgctxt "IDD_PPAGEPLAYBACK_IDC_STATIC4"
+msgid "Vertical Alignment:"
 msgstr ""
 
 msgctxt "IDD_PPAGESUBTITLES_IDC_CHECK3"
@@ -1255,6 +1259,10 @@ msgstr "ਅਧੂਰਾ ਛੱਡੋ"
 msgctxt "IDD_SUBTITLEDL_DLG_IDC_BUTTON3"
 msgid "Options"
 msgstr "ਚੋਣਾਂ"
+
+msgctxt "IDD_SUBTITLEDL_DLG_IDC_BUTTON4"
+msgid "Search"
+msgstr ""
 
 msgctxt "IDD_SUBTITLEUP_DLG_CAPTION"
 msgid "Upload subtitles"
