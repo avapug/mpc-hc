@@ -468,6 +468,7 @@ static constexpr wmcmd_base default_wmcmds[] = {
     { ID_FILE_SUBTITLES_UPLOAD,           'U', FVIRTKEY | FNOINVERT,                    IDS_SUBTITLES_UPLOAD },
     { ID_FILE_CLOSE_AND_RESTORE,          'C', FVIRTKEY | FCONTROL | FNOINVERT,         IDS_AG_CLOSE },
     { ID_FILE_PROPERTIES,              VK_F10, FVIRTKEY | FSHIFT | FNOINVERT,           IDS_AG_PROPERTIES },
+    { ID_FILE_OPEN_LOCATION,           VK_F10, FVIRTKEY | FCONTROL | FSHIFT | FNOINVERT,IDS_AG_OPEN_FILE_LOCATION },
     { ID_FILE_EXIT,                       'X', FVIRTKEY | FALT | FNOINVERT,             IDS_AG_EXIT },
     { ID_PLAY_PLAYPAUSE,             VK_SPACE, FVIRTKEY | FNOINVERT,                    IDS_AG_PLAYPAUSE,   APPCOMMAND_MEDIA_PLAY_PAUSE, wmcmd::LUP, wmcmd::LUP },
     { ID_PLAY_PLAY,                         0, FVIRTKEY | FNOINVERT,                    IDS_AG_PLAY,        APPCOMMAND_MEDIA_PLAY },
@@ -1573,7 +1574,7 @@ void CAppSettings::LoadSettings()
         }
     }
     bModernSeekbar = !!pApp->GetProfileInt(IDS_R_SETTINGS, IDS_RS_MODERNSEEKBAR, TRUE);
-    iModernSeekbarHeight = pApp->GetProfileInt(IDS_R_SETTINGS, IDS_RS_MODERNSEEKBARHEIGHT, MIN_MODERN_SEEKBAR_HEIGHT);
+    iModernSeekbarHeight = pApp->GetProfileInt(IDS_R_SETTINGS, IDS_RS_MODERNSEEKBARHEIGHT, DEF_MODERN_SEEKBAR_HEIGHT);
     if (iModernSeekbarHeight < MIN_MODERN_SEEKBAR_HEIGHT || iModernSeekbarHeight > MAX_MODERN_SEEKBAR_HEIGHT) {
         iModernSeekbarHeight = DEF_MODERN_SEEKBAR_HEIGHT;
     }
