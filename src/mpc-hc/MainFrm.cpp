@@ -476,6 +476,8 @@ BEGIN_MESSAGE_MAP(CMainFrame, CFrameWnd)
     ON_COMMAND_RANGE(ID_AFTERPLAYBACK_PLAYNEXT, ID_AFTERPLAYBACK_DONOTHING, OnAfterplayback)
     ON_COMMAND_RANGE(ID_PLAY_REPEAT_ONEFILE, ID_PLAY_REPEAT_WHOLEPLAYLIST, OnPlayRepeat)
     ON_UPDATE_COMMAND_UI_RANGE(ID_PLAY_REPEAT_ONEFILE, ID_PLAY_REPEAT_WHOLEPLAYLIST, OnUpdatePlayRepeat)
+    ON_COMMAND_RANGE(ID_PLAY_REPEAT_AB, ID_PLAY_REPEAT_AB_MARK_B, OnABRepeat)
+    ON_UPDATE_COMMAND_UI_RANGE(ID_PLAY_REPEAT_AB, ID_PLAY_REPEAT_AB_MARK_B, OnUpdateABRepeat)
     ON_COMMAND(ID_PLAY_REPEAT_FOREVER, OnPlayRepeatForever)
     ON_UPDATE_COMMAND_UI(ID_PLAY_REPEAT_FOREVER, OnUpdatePlayRepeatForever)
 
@@ -795,6 +797,10 @@ CMainFrame::CMainFrame()
     , fileDialogHookHelper(nullptr)
     , delayingFullScreen(false)
     , restoringWindowRect(false)
+    , abRepeatPositionAEnabled(false)
+    , abRepeatPositionBEnabled(false)
+    , abRepeatPositionA(0)
+    , abRepeatPositionB(0)
 {
     // Don't let CFrameWnd handle automatically the state of the menu items.
     // This means that menu items without handlers won't be automatically
@@ -1303,6 +1309,22 @@ void CMainFrame::Dump(CDumpContext& dc) const
 
 #endif //_DEBUG
 
+typedef HIMC(WINAPI* pfnImmAssociateContext)(HWND, HIMC);
+void dynImmAssociateContext(HWND hWnd, HIMC himc) {
+    HMODULE hImm32;
+    pfnImmAssociateContext pImmAssociateContext;
+
+    hImm32 = LoadLibrary(_T("imm32.dll"));
+    if (NULL == hImm32) return; // No East Asian support
+    pImmAssociateContext = (pfnImmAssociateContext)GetProcAddress(hImm32, "ImmAssociateContext");
+    if (NULL == pImmAssociateContext) {
+        FreeLibrary(hImm32);
+        return;
+    }
+    pImmAssociateContext(hWnd, himc);
+    FreeLibrary(hImm32);
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // CMainFrame message handlers
 void CMainFrame::OnSetFocus(CWnd* pOldWnd)
@@ -1310,6 +1332,9 @@ void CMainFrame::OnSetFocus(CWnd* pOldWnd)
     // forward focus to the view window
     if (IsWindow(m_wndView.m_hWnd)) {
         m_wndView.SetFocus();
+        dynImmAssociateContext(m_wndView.m_hWnd, NULL);
+    } else {
+        dynImmAssociateContext(m_hWnd, NULL);
     }
 }
 
@@ -1822,6 +1847,11 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent)
                             m_pMS->GetCurrentPosition(&rtNow);
                             m_pMS->GetDuration(&rtDur);
 
+                            if (abRepeatPositionBEnabled && rtNow >= abRepeatPositionB) {
+                                PerformABRepeat();
+                                return;
+                            }
+
                             if (m_bRememberFilePos && !m_fEndOfStream) {
                                 CFilePositionList& fp = AfxGetAppSettings().filePositions;
                                 FILE_POSITION* filePosition = fp.GetLatestEntry();
@@ -1861,6 +1891,12 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent)
                                              : 25.0;
 
                                 rtNow = HMSF2RT(Location.TimeCode, fps);
+
+                                if (abRepeatPositionBEnabled && rtNow >= abRepeatPositionB) {
+                                    PerformABRepeat();
+                                    return;
+                                }
+
                                 DVD_HMSF_TIMECODE tcDur;
                                 ULONG ulFlags;
                                 if (SUCCEEDED(m_pDVDI->GetTotalTitleTime(&tcDur, &ulFlags))) {
@@ -2375,6 +2411,134 @@ void CMainFrame::DoAfterPlaybackEvent()
     }
 }
 
+void CMainFrame::OnUpdateABRepeat(CCmdUI* pCmdUI) {
+    bool canABRepeat = GetPlaybackMode() == PM_FILE || GetPlaybackMode() == PM_DVD;
+    bool abRepeatActive = abRepeatPositionAEnabled || abRepeatPositionBEnabled;
+
+    switch (pCmdUI->m_nID) {
+    case ID_PLAY_REPEAT_AB:
+        pCmdUI->Enable(canABRepeat && abRepeatActive);
+        break;
+    case ID_PLAY_REPEAT_AB_MARK_A:
+        if (pCmdUI->m_pMenu) {
+            pCmdUI->m_pMenu->CheckMenuItem(ID_PLAY_REPEAT_AB_MARK_A, MF_BYCOMMAND | (abRepeatPositionAEnabled ? MF_CHECKED : MF_UNCHECKED));
+        }
+        pCmdUI->Enable(canABRepeat);
+        break;
+    case ID_PLAY_REPEAT_AB_MARK_B:
+        if (pCmdUI->m_pMenu) {
+            pCmdUI->m_pMenu->CheckMenuItem(ID_PLAY_REPEAT_AB_MARK_B, MF_BYCOMMAND | (abRepeatPositionBEnabled ? MF_CHECKED : MF_UNCHECKED));
+        }
+        pCmdUI->Enable(canABRepeat);
+        break;
+    default:
+        ASSERT(FALSE);
+        return;
+    }
+}
+
+
+void CMainFrame::OnABRepeat(UINT nID) {
+    switch (nID) {
+    case ID_PLAY_REPEAT_AB:
+        if (abRepeatPositionAEnabled || abRepeatPositionBEnabled) { //only support disabling from the menu
+            abRepeatPositionAEnabled = false;
+            abRepeatPositionBEnabled = false;
+            abRepeatPositionA = 0;
+            abRepeatPositionB = 0;
+            m_wndSeekBar.Invalidate();
+        }
+        break;
+    case ID_PLAY_REPEAT_AB_MARK_A:
+    case ID_PLAY_REPEAT_AB_MARK_B:
+        REFERENCE_TIME rtDur = 0;
+        int playmode = GetPlaybackMode();
+
+        if (playmode == PM_FILE && m_pMS) {
+            m_pMS->GetDuration(&rtDur);
+        } else if (playmode == PM_DVD && m_pDVDI) {
+            DVD_PLAYBACK_LOCATION2 Location;
+            if (m_pDVDI->GetCurrentLocation(&Location) == S_OK) {
+                double fps = Location.TimeCodeFlags == DVD_TC_FLAG_25fps ? 25.0
+                    : Location.TimeCodeFlags == DVD_TC_FLAG_30fps ? 30.0
+                    : Location.TimeCodeFlags == DVD_TC_FLAG_DropFrame ? 30 / 1.001
+                    : 25.0;
+                DVD_HMSF_TIMECODE tcDur;
+                ULONG ulFlags;
+                if (SUCCEEDED(m_pDVDI->GetTotalTitleTime(&tcDur, &ulFlags))) {
+                    rtDur = HMSF2RT(tcDur, fps);
+                }
+            }
+        } else {
+            return;
+        }
+
+        if (nID == ID_PLAY_REPEAT_AB_MARK_A) {
+            if (abRepeatPositionAEnabled) {
+                abRepeatPositionAEnabled = false;
+                abRepeatPositionA = 0;
+            } else if (SUCCEEDED(m_pMS->GetCurrentPosition(&abRepeatPositionA))) {
+                if (abRepeatPositionA < rtDur) {
+                    abRepeatPositionAEnabled = true;
+                    if (abRepeatPositionBEnabled && abRepeatPositionA >= abRepeatPositionB) {
+                        abRepeatPositionBEnabled = false;
+                        abRepeatPositionB = 0;
+                    }
+                } else {
+                    abRepeatPositionA = 0;
+                }
+            }
+        } else if (nID == ID_PLAY_REPEAT_AB_MARK_B) {
+            if (abRepeatPositionBEnabled) {
+                abRepeatPositionBEnabled = false;
+                abRepeatPositionB = 0;
+            } else if (SUCCEEDED(m_pMS->GetCurrentPosition(&abRepeatPositionB))) {
+                if (abRepeatPositionB > 0 && abRepeatPositionB > abRepeatPositionA && rtDur >= abRepeatPositionB) {
+                    abRepeatPositionBEnabled = true;
+                    if (GetMediaState() == State_Running) {
+                        PerformABRepeat(); //we just set loop point B, so we need to repeat right now
+                    }
+                } else {
+                    abRepeatPositionB = 0;
+                }
+            }
+        }
+
+        m_wndSeekBar.Invalidate();
+        break;
+    }
+}
+
+void CMainFrame::PerformABRepeat() {
+    SeekTo(abRepeatPositionA);
+
+    if (GetMediaState() == State_Stopped) {
+        SendMessage(WM_COMMAND, ID_PLAY_PLAY);
+    }
+}
+
+void CMainFrame::DisableABRepeat() {
+    abRepeatPositionAEnabled = false;
+    abRepeatPositionBEnabled = false;
+    abRepeatPositionA = 0;
+    abRepeatPositionB = 0;
+
+    m_wndSeekBar.Invalidate();
+}
+
+bool CMainFrame::CheckABRepeat(REFERENCE_TIME& aPos, REFERENCE_TIME& bPos, bool& aEnabled, bool& bEnabled) {
+    if (GetPlaybackMode() == PM_FILE || GetPlaybackMode() == PM_DVD) {
+        if (abRepeatPositionAEnabled || abRepeatPositionBEnabled) {
+            aPos = abRepeatPositionA;
+            bPos = abRepeatPositionB;
+            aEnabled = abRepeatPositionAEnabled;
+            bEnabled = abRepeatPositionBEnabled;
+            return true;
+        }
+    }
+    return false;
+}
+
 //
 // graph event EC_COMPLETE handler
 //
@@ -2403,7 +2567,9 @@ void CMainFrame::GraphEventComplete()
     //    m_pSubtitlesProviders->Upload();
     //}
 
-    if (s.fLoopForever || m_nLoops < s.nLoops) {
+    if (abRepeatPositionAEnabled || abRepeatPositionBEnabled) {
+        PerformABRepeat();
+    } else if (s.fLoopForever || m_nLoops < s.nLoops) {
         if (bBreak) {
             DoAfterPlaybackEvent();
         } else if ((m_wndPlaylistBar.GetCount() > 1) && (s.eLoopMode == CAppSettings::LoopMode::PLAYLIST)) {
@@ -7286,6 +7452,9 @@ void CMainFrame::OnPlayStop()
     } else {
         m_fEndOfStream = false;
     }
+
+    DisableABRepeat();
+
     SetPlayState(PS_STOP);
 }
 
@@ -7939,7 +8108,7 @@ void CMainFrame::OnPlayAudio(UINT nID)
     } else if (GetPlaybackMode() == PM_FILE) {
         OnNavStreamSelectSubMenu(i, 1);
     } else if (GetPlaybackMode() == PM_DIGITAL_CAPTURE) {
-        if (CDVBChannel* pChannel = m_pDVBState->pChannel) {
+        if (CBDAChannel* pChannel = m_pDVBState->pChannel) {
             OnNavStreamSelectSubMenu(i, 1);
             pChannel->SetDefaultAudio(i);
         }
@@ -7976,7 +8145,7 @@ void CMainFrame::OnPlaySubtitles(UINT nID)
     }
 
     if (GetPlaybackMode() == PM_DIGITAL_CAPTURE) {
-        if (CDVBChannel* pChannel = m_pDVBState->pChannel) {
+        if (CBDAChannel* pChannel = m_pDVBState->pChannel) {
             OnNavStreamSelectSubMenu(i, 2);
             pChannel->SetDefaultSubtitle(i);
         }
@@ -14350,6 +14519,10 @@ void CMainFrame::SeekTo(REFERENCE_TIME rtPos, bool bShowOSD /*= true*/)
     OnTimer(TIMER_STREAMPOSPOLLER);
     OnTimer(TIMER_STREAMPOSPOLLER2);
 
+    if (abRepeatPositionAEnabled && rtPos < abRepeatPositionA || abRepeatPositionBEnabled && rtPos > abRepeatPositionB) {
+        DisableABRepeat();
+    }
+
     SendCurrentPositionToApi(true);
 }
 
@@ -15184,7 +15357,7 @@ HRESULT CMainFrame::SetChannel(int nChannel)
     CAppSettings& s = AfxGetAppSettings();
     HRESULT hr = S_OK;
     CComQIPtr<IBDATuner> pTun = m_pGB;
-    CDVBChannel* pChannel = s.FindChannelByPref(nChannel);
+    CBDAChannel* pChannel = s.FindChannelByPref(nChannel);
 
     if (s.m_DVBChannels.empty() && nChannel == INT_ERROR) {
         hr = S_FALSE; // All channels have been cleared or it is the first start
@@ -15249,7 +15422,7 @@ HRESULT CMainFrame::SetChannel(int nChannel)
 
 void CMainFrame::UpdateCurrentChannelInfo(bool bShowOSD /*= true*/, bool bShowInfoBar /*= false*/)
 {
-    const CDVBChannel* pChannel = m_pDVBState->pChannel;
+    const CBDAChannel* pChannel = m_pDVBState->pChannel;
     CComQIPtr<IBDATuner> pTun = m_pGB;
 
     if (!m_pDVBState->bInfoActive && pChannel && pTun) {
@@ -16754,8 +16927,8 @@ void CMainFrame::UpdateControlState(UpdateControlTarget target)
                     m_wndView.LoadImg(internalCover);
                     m_currentCoverPath = filename;
                     m_currentCoverAuthor = author;
-                } else if (!filedir.IsEmpty() && (m_currentCoverPath != filedir || m_currentCoverAuthor != author)) {
-                    m_wndView.LoadImg(CoverArt::FindExternal(filename_no_ext, filedir, author));
+                } else if (!filedir.IsEmpty() && (m_currentCoverPath != filedir || m_currentCoverAuthor != author || currentCoverIsFileArt)) {
+                    m_wndView.LoadImg(CoverArt::FindExternal(filename_no_ext, filedir, author, currentCoverIsFileArt));
                     m_currentCoverPath = filedir;
                     m_currentCoverAuthor = author;
                 } else if (!m_wndView.IsCustomImgLoaded()) {
